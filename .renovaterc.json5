@@ -1,4 +1,11 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["local>home-operations/renovate-config"],
+  packageRules: [
+    {
+      description: "No CI here, so no required check gates GitHub's auto-merge: keep every update manual",
+      matchUpdateTypes: ["minor", "patch", "digest", "lockFileMaintenance"],
+      automerge: false,
+    },
+  ],
 }
