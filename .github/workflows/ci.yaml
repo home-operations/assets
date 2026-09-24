@@ -1,0 +1,70 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install: false
+
+      - name: Resolve linter versions
+        id: tools
+        run: |
+          echo "actionlint=$(mise config get tools.actionlint)" >> "$GITHUB_OUTPUT"
+          echo "zizmor=$(mise config get tools.zizmor)" >> "$GITHUB_OUTPUT"
+
+      - name: Lint workflows
+        uses: home-operations/.github/actions/workflow-lint@1d6eebfd2066f2aa84939e573e56f60d8d2ed85f # workflow-lint-v1.0.4
+        with:
+          actionlint-version: ${{ steps.tools.outputs.actionlint }}
+          zizmor-version: ${{ steps.tools.outputs.zizmor }}
+
+  status:
+    if: ${{ !cancelled() }}
+    name: Build Success
+    needs:
+      - workflow-lint
+    runs-on: ubuntu-26.04
+    permissions: {}
+    steps:
+      # cancelled counts as failed: !cancelled() above still runs this job when
+      # individual needs were cancelled but the run was not, and a required job
+      # that never reached a verdict must not clear the merge gate.
+      - name: Any jobs failed?
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          exit 1
+
+      - name: All jobs passed or skipped?
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: |
+          echo "All jobs passed or skipped" && echo "${{ toJSON(needs.*.result) }}"
